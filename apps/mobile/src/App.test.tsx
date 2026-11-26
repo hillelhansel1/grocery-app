@@ -1,14 +1,97 @@
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import App from './App';
+import { money, t } from './locale';
+import { offers, products } from './mockData';
 
 jest.mock('react-native-safe-area-context', () =>
   jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
-test('shows the Hebrew heading and welcome text', () => {
+const button = (name: string) => screen.getByRole('button', { name });
+const tab = (name: string) => screen.getByRole('tab', { name });
+
+test('anchors Hebrew content in an RTL shell and opens an active list', () => {
   render(<App />);
 
-  expect(screen.getByRole('header', { name: 'קניות חכמות' })).toBeVisible();
-  expect(screen.getByText('ברוכים הבאים')).toBeVisible();
+  expect(screen.getByTestId('app-shell')).toHaveStyle({ direction: 'rtl' });
+  expect(screen.getByRole('header', { name: t.app })).toHaveStyle({
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  });
+  expect(screen.getByRole('header', { name: t.favorites })).toBeVisible();
+  expect(screen.getByRole('header', { name: t.deals })).toBeVisible();
+  expect(screen.queryByText(money.format(offers[0].price))).toBeNull();
+  fireEvent.press(button('קניות לשבוע'));
+  expect(screen.getByRole('header', { name: 'קניות לשבוע' })).toBeVisible();
+});
+
+test('creates a list, selects a suggestion, and adds and adjusts a brand product', () => {
+  render(<App />);
+  fireEvent.press(button(t.createList));
+  fireEvent.changeText(screen.getByLabelText(t.listName), 'קניות לסוף השבוע');
+  fireEvent.press(button(t.saveList));
+  expect(screen.getByText(t.emptyList)).toBeVisible();
+  fireEvent.press(button(t.addProducts));
+  fireEvent.changeText(screen.getByLabelText(t.searchPrompt), 'תנובה');
+  const suggestion = button(products.milk.label);
+  fireEvent.press(suggestion);
+  expect(screen.queryByText(t.suggestions)).toBeNull();
+
+  const milkChoices = screen.getAllByText(/^(כל המותגים|תנובה|יטבתה)$/);
+  expect(milkChoices.map((choice) => choice.props.children)).toEqual([t.allBrands, 'תנובה', 'יטבתה']);
+  fireEvent.press(button(t.add + ' · ' + products.milk.label + ' · תנובה'));
+  const product = products['milk-tnuva'].label;
+  fireEvent.press(button(t.increase + ' · ' + product));
+  fireEvent.press(tab(t.list));
+  expect(screen.getByText(product)).toBeVisible();
+  expect(screen.getByLabelText(t.units('2'))).toBeVisible();
+  fireEvent.press(button(t.decrease + ' · ' + product));
+  expect(screen.getByLabelText(t.units('1'))).toBeVisible();
+});
+
+test('browses categories and shows an empty search state', () => {
+  render(<App />);
+  fireEvent.press(tab(t.search));
+  fireEvent.press(button(t.categories));
+  fireEvent.press(button('פירות וירקות'));
+  expect(screen.getByText(products.apple.label)).toBeVisible();
+  expect(screen.queryByText(products.milk.label)).toBeNull();
+  fireEvent.changeText(screen.getByLabelText(t.searchPrompt), 'אורז');
+  expect(screen.getByText(t.noResults)).toBeVisible();
+});
+
+test('moves purchased items below pending ones and restores deleted items', () => {
+  render(<App />);
+  fireEvent.press(button('קניות לשבוע'));
+  const milk = products.milk.label;
+  const bread = products.bread.label;
+  fireEvent.press(button(t.markPurchased + ' · ' + milk));
+  expect(screen.getAllByText(/^(לחם מלא 750 גרם|חלב 3% 1 ליטר)$/)
+    .map((node) => node.props.children)).toEqual([bread, milk]);
+  expect(screen.getByText(milk)).toHaveStyle({ textDecorationLine: 'line-through' });
+  fireEvent.press(button(t.remove + ' · ' + milk));
+  expect(screen.queryByText(milk)).toBeNull();
+  fireEvent.press(button(t.undo));
+  expect(button(t.markPending + ' · ' + milk)).toBeVisible();
+  expect(screen.getByLabelText(t.units('2'))).toBeVisible();
+});
+
+test('ranks complete offers by price and places the cheaper partial offer after them', () => {
+  render(<App />);
+  fireEvent.press(tab(t.compare));
+  const displayedStores = screen.getAllByText(/^שוק העיר|^סופר השכונה$/);
+  expect(displayedStores.map((node) => node.props.children)).toEqual([
+    offers[1].name,
+    offers[0].name,
+    offers[2].name,
+  ]);
+  expect(screen.getByRole('header', { name: t.partial })).toBeVisible();
+  expect(screen.getByText(t.missing + ' · ' + products.bread.label)).toBeVisible();
+  expect(screen.getByText(money.format(offers[2].price))).toBeVisible();
+  fireEvent.press(tab(t.list));
+  fireEvent.press(button(t.increase + ' · ' + products.milk.label));
+  fireEvent.press(button(t.compareBasket));
+  expect(screen.getByText(t.unavailable)).toBeVisible();
+  expect(screen.queryByText(offers[0].name)).toBeNull();
 });
