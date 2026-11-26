@@ -12,6 +12,7 @@ class FeedKind(StrEnum):
 
 class RunStatus(StrEnum):
     SUCCESS = "success"
+    PARTIAL = "partial"
     MISSING = "missing"
     FAILED = "failed"
 
@@ -37,6 +38,16 @@ class Store:
     subchain_id: str
     store_id: str
 
+    @property
+    def directory_key(self) -> tuple[Retailer, str, str]:
+        if self.retailer.source == "shufersal":
+            return (
+                self.retailer,
+                self.subchain_id.lstrip("0") or "0",
+                self.store_id.lstrip("0") or "0",
+            )
+        return self.retailer, self.subchain_id, self.store_id
+
 
 @dataclass(frozen=True)
 class SourceProduct:
@@ -59,7 +70,7 @@ class PriceObservation:
     amount: Decimal
     source_updated_at: datetime
     source_row: int
-    item_status: str
+    item_status: str | None
     currency: Literal["ILS"] = "ILS"
 
 
@@ -74,3 +85,33 @@ class IngestionRun:
     store: Store | None = None
     observations: tuple[PriceObservation, ...] = ()
     error: str | None = None
+
+    rejected: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StoreLocation:
+    store: Store
+    name: str
+    address: str | None
+    city: str | None
+    postal_code: str | None
+
+
+@dataclass(frozen=True)
+class StoreDirectory:
+    retailer: Retailer
+    retailer_name: str
+    locations: tuple[StoreLocation, ...]
+    source_url: str
+    payload_sha256: str
+
+    def location_for(self, store: Store) -> StoreLocation | None:
+        return next(
+            (
+                location
+                for location in self.locations
+                if location.store.directory_key == store.directory_key
+            ),
+            None,
+        )
