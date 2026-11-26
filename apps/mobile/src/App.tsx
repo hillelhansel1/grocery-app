@@ -104,7 +104,7 @@ export default function App() {
                 onQuantity={changeQuantity}
                 onToggle={togglePurchased}
                 onRemove={remove}
-                onSearch={openSearch}
+                onSearch={() => openSearch()}
                 onCompare={() => setTab('compare')}
               />
             )}
